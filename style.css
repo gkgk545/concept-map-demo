@@ -1,0 +1,165 @@
+:root {
+  --bg: #f4f1ea;
+  --surface: #ffffff;
+  --ink: #222222;
+  --muted: #6b665f;
+  --line: #ddd7cc;
+  --accent: #4f73c9;
+  --matched: #2e9d5b;
+  --extra: #9a9690;
+  --missed: #e07b39;
+  --prereq: #8a8580;
+  font-family: system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  color: var(--ink);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+h1 { font-size: 18px; margin: 0; }
+
+select, button {
+  font: inherit;
+  font-size: 14px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+.segmented { display: flex; }
+.segmented button { border-radius: 0; margin-left: -1px; }
+.segmented button:first-child { border-radius: 8px 0 0 8px; }
+.segmented button:last-child { border-radius: 0 8px 8px 0; }
+
+body[data-mode="explore"] button[data-mode="explore"],
+body[data-mode="make"] button[data-mode="make"],
+body[data-view="2d"] button[data-view="2d"],
+body[data-view="3d"] button[data-view="3d"] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #fff;
+}
+
+.tools { display: flex; gap: 8px; }
+body[data-mode="make"] .explore-only,
+body[data-mode="explore"] .make-only { display: none; }
+
+main { flex: 1; display: flex; min-height: 0; }
+
+.stage { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+#canvas {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+/* 범례 글이 바뀌어도 캔버스 크기가 변하지 않게 높이를 고정한다(G6가 처음 크기로 맞춰 그린다). */
+#legend {
+  height: 30px;
+  white-space: nowrap;
+  overflow: hidden;
+  margin: 0;
+  padding: 6px 16px;
+  font-size: 13px;
+  color: var(--muted);
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.sw { display: inline-block; width: 22px; height: 0; margin: 0 6px 0 10px; vertical-align: middle; border-top: 3px solid; }
+.sw.prereq { border-color: var(--prereq); border-top-width: 4px; }
+.sw.relation, .sw.mine { border-color: var(--accent); border-top-width: 2px; }
+/* 탐색 2D: 선수 학습 연결은 보라 점선, 관계 연결은 영역 색을 따른다 */
+body[data-mode="explore"][data-view="2d"] .sw.prereq { border-color: #8b7fd6; border-top-style: dashed; }
+body[data-mode="explore"][data-view="2d"] .sw.relation { border-color: #6f7f62; }
+.sw.matched { border-color: var(--matched); }
+.sw.extra { border-color: var(--extra); }
+.sw.missed { border-color: var(--missed); border-top-style: dashed; }
+
+#panel {
+  width: 340px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  padding: 16px 18px 32px;
+  border-left: 1px solid var(--line);
+  background: var(--bg);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+#panel h2 { font-size: 20px; margin: 0 0 4px; }
+#panel h3 { font-size: 14px; margin: 18px 0 6px; color: var(--muted); }
+#panel ul { margin: 0; padding-left: 18px; }
+#panel li { margin-bottom: 8px; }
+.muted { color: var(--muted); }
+.hint { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.stale { color: var(--missed); font-weight: 600; margin: 4px 0 0; }
+.chip { display: inline-block; padding: 1px 10px; border-radius: 999px; font-size: 12px; }
+
+.radar, .gauge { display: block; width: 100%; max-width: 260px; margin: 6px auto; }
+.radar-grid { fill: none; stroke: var(--line); }
+.radar-axis { stroke: var(--line); }
+.radar-label { font-size: 12px; text-anchor: middle; dominant-baseline: middle; fill: var(--ink); }
+.gauge-track { fill: var(--line); }
+.gauge-value { fill: var(--matched); }
+.gauge-percent { font-size: 28px; font-weight: 700; text-anchor: middle; fill: var(--ink); }
+.gauge-sub { font-size: 12px; text-anchor: middle; fill: var(--muted); }
+
+.progress span { font-size: 13px; }
+.progress .bar { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; margin-top: 4px; }
+.progress .bar div { height: 100%; background: var(--matched); }
+
+.labels3d { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.labels3d span {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-size: 12px;
+  white-space: nowrap;
+  color: var(--ink);
+  text-shadow: 0 0 3px var(--bg), 0 0 3px var(--bg);
+}
+.labels3d span.selected { font-weight: 700; font-size: 14px; }
+
+.errors, .narrow-note { padding: 24px; }
+.errors h2 { margin-top: 0; }
+
+dialog { border: none; border-radius: 12px; padding: 20px; width: min(480px, calc(100vw - 32px)); }
+dialog::backdrop { background: rgb(0 0 0 / 0.3); }
+dialog h2 { font-size: 17px; margin: 0 0 10px; }
+dialog label { font-size: 14px; color: var(--muted); }
+dialog textarea { display: block; width: 100%; margin: 6px 0 14px; font: inherit; padding: 8px; border: 1px solid var(--line); border-radius: 8px; }
+.dialog-buttons { display: flex; gap: 8px; }
+.dialog-buttons span { flex: 1; }
+
+@media (max-width: 760px) {
+  body { height: auto; min-height: 100vh; }
+  main { flex-direction: column; }
+  #canvas { height: 70vh; flex: none; }
+  #panel { width: auto; border-left: none; border-top: 1px solid var(--line); }
+  .make-only { display: none !important; }
+}

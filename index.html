@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>개념도 학습</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body data-mode="explore" data-view="2d">
+  <header>
+    <h1>개념도 학습</h1>
+    <select id="unit-select" aria-label="단원"></select>
+    <nav class="segmented" aria-label="모드">
+      <button data-mode="explore">탐색</button>
+      <button data-mode="make">만들기</button>
+    </nav>
+    <div class="tools explore-only segmented" aria-label="보기">
+      <button data-view="2d">2D</button>
+      <button data-view="3d">3D</button>
+    </div>
+    <div class="tools make-only">
+      <button id="btn-compare" class="primary">선생님 개념도와 비교</button>
+      <button id="btn-png">그림으로 저장</button>
+      <button id="btn-reset">처음부터</button>
+    </div>
+  </header>
+  <main>
+    <div class="stage">
+      <section id="canvas"></section>
+      <p id="legend"></p>
+    </div>
+    <aside id="panel"></aside>
+  </main>
+
+  <dialog id="link-dialog">
+    <form method="dialog">
+      <h2 id="link-title"></h2>
+      <label for="link-text">두 개념의 관계를 한 문장으로 써 주세요.</label>
+      <textarea id="link-text" rows="3" required maxlength="200"></textarea>
+      <div class="dialog-buttons">
+        <button value="delete" id="link-delete" formnovalidate>연결 지우기</button>
+        <span></span>
+        <button value="cancel" formnovalidate>취소</button>
+        <button value="save" class="primary">저장</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="vendor/d3.min.js"></script>
+  <script src="vendor/g6.min.js"></script>
+  <script src="vendor/3d-force-graph.min.js"></script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
