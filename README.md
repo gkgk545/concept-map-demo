@@ -25,15 +25,19 @@ python3 -m http.server 8765
 node --test tests/*.test.mjs
 ```
 
-## Cloudflare Pages 배포
+## 배포 (Cloudflare)
 
-빌드 명령 없이 이 폴더를 그대로 올린다.
+배포 주소: https://concept-map-demo.gkgk545.workers.dev
+
+Cloudflare 프로젝트 `concept-map-demo`는 Workers 쪽(새 Pages)에 있어 주소가 `pages.dev`가 아니라 `workers.dev`다. 빌드 명령 없이, 커밋된 파일만 뽑아 정적 파일로 올린다(작업 폴더를 그대로 올리면 `.claude/` 같은 커밋하지 않은 파일까지 공개된다).
 
 ```bash
-npx wrangler pages deploy . --project-name concept-map
+rm -rf /tmp/concept-map-deploy && mkdir /tmp/concept-map-deploy
+git archive HEAD | tar -x -C /tmp/concept-map-deploy
+npx wrangler@4.151.1 deploy --name concept-map-demo --assets /tmp/concept-map-deploy --compatibility-date 2026-10-12
 ```
 
-또는 GitHub 저장소를 Pages에 연결하고 Build command는 비우고 Build output directory는 `/`로 둔다.
+처음 한 번은 `npx wrangler@4.151.1 login`으로 Cloudflare 로그인을 승인해야 한다. 올리기 전에 마지막 줄 끝에 `--dry-run`을 붙이면 실제로 배포하지 않고 올릴 파일만 확인할 수 있다.
 
 ## 구조
 
