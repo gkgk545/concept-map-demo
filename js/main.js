@@ -4,6 +4,7 @@ import { renderPanel } from './panel.js';
 import * as explore2d from './explore2d.js';
 import * as explore3d from './explore3d.js';
 import * as make from './make.js';
+import * as make3d from './make3d.js';
 
 const $ = (selector) => document.querySelector(selector);
 const canvas = $('#canvas');
@@ -83,7 +84,8 @@ function mountView() {
       textContent: '만들기 모드는 노트북·태블릿처럼 큰 화면에서 해 주세요.',
     }));
   } else {
-    const mod = state.mode === 'make' ? make : state.view === '3d' ? explore3d : explore2d;
+    const mods = state.mode === 'make' ? { '2d': make, '3d': make3d } : { '2d': explore2d, '3d': explore3d };
+    const mod = mods[state.view];
     view = mod.mount(canvas, unit, { work: state.work, onSelect: select, onWorkChange: workChanged });
     view.select(state.selected);
   }
@@ -98,7 +100,9 @@ function refresh() {
     state.mode === 'make'
       ? compared
         ? '<i class="sw matched"></i>맞은 연결 <i class="sw extra"></i>내가 더한 연결 <i class="sw missed"></i>놓친 연결(마우스를 올리면 선생님 문장)'
-        : '<i class="sw mine"></i>내 연결 · 카드 두 개를 차례로 눌러 이어요'
+        : state.view === '3d'
+          ? '<i class="sw mine"></i>내 연결 · 공 두 개를 차례로 눌러 이어요 · 끌어서 돌려 보세요'
+          : '<i class="sw mine"></i>내 연결 · 카드 두 개를 차례로 눌러 이어요'
       : state.view === '3d'
         ? '<i class="sw prereq"></i>선수 학습 연결 <i class="sw relation"></i>관계 연결 · 공 크기는 중요도 · 끌어서 돌려 보세요'
         : '<i class="sw prereq"></i>선수 학습 연결 <i class="sw relation"></i>관계 연결 · 개념을 누르면 관계 문장이 보여요';

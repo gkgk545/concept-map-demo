@@ -1,17 +1,9 @@
 // 탐색 모드 3D 보기. 개념 이름은 HTML 글자를 3D 좌표에 맞춰 매 프레임 옮겨 늘 보이게 한다.
 import { pairKey } from './model.js';
 
-export function mount(el, unit, { onSelect }) {
+// 탐색 3D와 만들기 3D가 함께 쓰는 공 모양과 배경
+export function create3d(el, unit, nodes, rendererConfig = {}) {
   const colors = new Map(unit.groups.map((g) => [g.id, g.color]));
-  const pairCount = new Map();
-  for (const l of unit.links) {
-    const key = pairKey(l.source, l.target);
-    pairCount.set(key, (pairCount.get(key) ?? 0) + 1);
-  }
-  const nodes = unit.concepts.map((c) => ({ ...c }));
-  const links = unit.links.map((l) => ({ ...l, doubled: pairCount.get(pairKey(l.source, l.target)) > 1 }));
-  const prereq = (l) => l.type === 'prerequisite';
-
   const graphEl = document.createElement('div');
   const labelLayer = document.createElement('div');
   labelLayer.className = 'labels3d';
@@ -25,26 +17,15 @@ export function mount(el, unit, { onSelect }) {
     }),
   );
 
-  const graph = new ForceGraph3D(graphEl)
+  const graph = new ForceGraph3D(graphEl, { rendererConfig })
     .width(el.clientWidth)
     .height(el.clientHeight)
     .backgroundColor('#f4f1ea')
     .showNavInfo(false)
-    .graphData({ nodes, links })
     .nodeLabel(() => '')
     .nodeColor((n) => colors.get(n.group))
     .nodeVal((n) => n.importance * 2)
     .nodeOpacity(0.95)
-    .linkColor((l) => (prereq(l) ? '#6e6a64' : '#4f73c9'))
-    .linkWidth((l) => (prereq(l) ? 1.6 : 0.5))
-    .linkOpacity(0.6)
-    .linkCurvature((l) => (l.doubled && !prereq(l) ? 0.3 : 0))
-    .linkDirectionalArrowLength((l) => (prereq(l) ? 6 : 0))
-    .linkDirectionalArrowRelPos(1)
-    .linkDirectionalParticles((l) => (prereq(l) ? 3 : 0))
-    .linkDirectionalParticleWidth(2)
-    .onNodeClick((n) => onSelect(n.id))
-    .onBackgroundClick(() => onSelect(null))
     .cooldownTime(3000);
   let fitted = false;
   graph.onEngineStop(() => fitted || ((fitted = true), graph.zoomToFit(600, 40)));
@@ -63,14 +44,49 @@ export function mount(el, unit, { onSelect }) {
   resize.observe(el);
 
   return {
-    select(id) {
-      for (const [nid, span] of labels) span.classList.toggle('selected', nid === id);
-    },
+    graph,
+    colors,
+    labels,
     destroy() {
       cancelAnimationFrame(frame);
       resize.disconnect();
       graph._destructor();
       el.replaceChildren();
     },
+  };
+}
+
+export function mount(el, unit, { onSelect }) {
+  const pairCount = new Map();
+  for (const l of unit.links) {
+    const key = pairKey(l.source, l.target);
+    pairCount.set(key, (pairCount.get(key) ?? 0) + 1);
+  }
+  const nodes = unit.concepts.map((c) => ({ ...c }));
+  const links = unit.links.map((l) => ({ ...l, doubled: pairCount.get(pairKey(l.source, l.target)) > 1 }));
+  const prereq = (l) => l.type === 'prerequisite';
+
+  let selected = null;
+  const { graph, labels, destroy } = create3d(el, unit, nodes);
+  graph
+    .graphData({ nodes, links })
+    .linkColor((l) => (prereq(l) ? '#6e6a64' : '#4f73c9'))
+    .linkWidth((l) => (prereq(l) ? 1.6 : 0.5))
+    .linkOpacity(0.6)
+    .linkCurvature((l) => (l.doubled && !prereq(l) ? 0.3 : 0))
+    .linkDirectionalArrowLength((l) => (prereq(l) ? 6 : 0))
+    .linkDirectionalArrowRelPos(1)
+    .linkDirectionalParticles((l) => (prereq(l) ? 3 : 0))
+    .linkDirectionalParticleWidth(2)
+    // 이미 선택한 개념을 다시 누르면 선택을 풀어 단원 전체 화면으로 돌아간다.
+    .onNodeClick((n) => onSelect(n.id === selected ? null : n.id))
+    .onBackgroundClick(() => onSelect(null));
+
+  return {
+    select(id) {
+      selected = id;
+      for (const [nid, span] of labels) span.classList.toggle('selected', nid === id);
+    },
+    destroy,
   };
 }

@@ -40,64 +40,41 @@ export function layout(unit) {
   return pos;
 }
 
-export function mount(el, unit, { onSelect }) {
-  const pos = layout(unit);
+const deep = (color, k = 1.4) => d3.color(color).darker(k).formatHex();
+
+// 같은 줄의 연결은 사이 개념을 뚫고 지나가지 않게 휘게 한다.
+export const sameRowCurve = (s, t) => (s.y === t.y ? 24 + Math.abs(t.x - s.x) * 0.12 : 0);
+
+// 탐색 2D와 만들기 2D가 함께 쓰는 개념도 모양: 영역 섬, 영역 색 카드, 중요도에 따른 카드 크기와 '핵심' 배지.
+// pos: 개념 id → { x, y }. hidden이면 처음에 숨겨 두었다가 차례로 드러낸다.
+export function mapLook(unit, pos, { hidden = false } = {}) {
   const colorOf = new Map(unit.groups.map((g) => [g.id, g.color]));
   const conceptOf = new Map(unit.concepts.map((c) => [c.id, c]));
-  const deep = (color, k = 1.4) => d3.color(color).darker(k).formatHex();
-  const typesByPair = new Map();
-  for (const l of unit.links) {
-    const key = pairKey(l.source, l.target);
-    typesByPair.set(key, (typesByPair.get(key) ?? 0) + 1);
-  }
-  const edges = unit.links.map((l, i) => {
-    const prereq = l.type === 'prerequisite';
-    const doubled = typesByPair.get(pairKey(l.source, l.target)) > 1;
-    const [s, t] = [pos.get(l.source), pos.get(l.target)];
-    // 같은 줄의 연결은 사이 개념을 뚫고 지나가지 않게 휘게 한다.
-    let curveOffset = s.y === t.y ? 24 + Math.abs(t.x - s.x) * 0.12 : 0;
-    if (doubled) curveOffset += prereq ? 26 : -26;
-    const tint = deep(colorOf.get(conceptOf.get(l.source).group), 1.2);
-    return {
-      id: `e${i}`,
-      type: prereq ? 'flow-edge' : 'quadratic',
-      source: l.source,
-      target: l.target,
-      style: prereq
-        ? { stroke: '#8b7fd6', lineWidth: 3.5, lineDash: [10, 8], endArrowSize: 11, curveOffset, zIndex: 1, visibility: 'hidden' }
-        : { stroke: tint, lineWidth: 1.6, strokeOpacity: 0.75, endArrowSize: 8, curveOffset, labelText: l.label, zIndex: 2, visibility: 'hidden' },
-    };
-  });
-
-  const graph = new G6.Graph({
-    container: el,
-    autoFit: 'view',
-    padding: 40,
-    animation: { duration: 350, easing: 'ease-out' },
-    data: {
-      // G6에서는 개념과 영역이 같은 id 공간을 쓴다. 인권 단원처럼 영역 id와 개념 id가 같을 수 있어 접두어를 붙인다.
-      nodes: unit.concepts.map((c) => ({
-        id: c.id,
-        combo: `group:${c.group}`,
-        style: { ...pos.get(c.id), labelText: c.label, visibility: 'hidden' },
-      })),
-      edges,
-      combos: unit.groups.map((g) => ({
-        id: `group:${g.id}`,
-        style: {
-          labelText: g.label,
-          fill: `linear-gradient(160deg, ${g.color} 0%, #ffffff 100%)`,
-          stroke: deep(g.color, 0.6),
-          labelBackgroundFill: deep(g.color, 1.6),
-          visibility: 'hidden',
-        },
-      })),
-    },
+  const visibility = hidden ? { visibility: 'hidden' } : {};
+  return {
+    // G6에서는 개념과 영역이 같은 id 공간을 쓴다. 인권 단원처럼 영역 id와 개념 id가 같을 수 있어 접두어를 붙인다.
+    nodes: unit.concepts.map((c) => ({
+      id: c.id,
+      combo: `group:${c.group}`,
+      style: { ...pos[c.id], labelText: c.label, ...visibility },
+    })),
+    combos: unit.groups.map((g) => ({
+      id: `group:${g.id}`,
+      style: {
+        labelText: g.label,
+        fill: `linear-gradient(160deg, ${g.color} 0%, #ffffff 100%)`,
+        stroke: deep(g.color, 0.6),
+        labelBackgroundFill: deep(g.color, 1.6),
+        ...visibility,
+      },
+    })),
     node: {
       type: 'concept-card',
       style: {
         // 중요도가 높을수록 카드가 크고 글씨가 굵다.
         ...CARD_STYLE,
+        // G6는 상태를 풀 때 기본 모양에 없는 값은 되돌리지 않는다. 흐림(inactive)이 남지 않게 기본 불투명도를 적어 둔다.
+        opacity: 1,
         size: (d) => [128 + conceptOf.get(d.id).importance * 9, 50],
         accent: (d) => deep(colorOf.get(conceptOf.get(d.id).group), 0.4),
         stroke: (d) => colorOf.get(conceptOf.get(d.id).group),
@@ -115,18 +92,6 @@ export function mount(el, unit, { onSelect }) {
         inactive: { opacity: 0.18 },
       },
       animation: { show: [{ fields: ['opacity'], duration: 450, easing: 'ease-out' }] },
-    },
-    edge: {
-      style: {
-        endArrow: true,
-        label: false,
-        ...DARK_LABEL,
-        increasedLineWidthForHitTesting: 14, // 가는 선도 누르기 쉽게
-      },
-      state: {
-        active: { label: true, halo: true, haloStrokeOpacity: 0.18, haloLineWidth: 10, lineWidth: 3, strokeOpacity: 1, zIndex: 5 },
-        inactive: { opacity: 0.08 },
-      },
     },
     combo: {
       type: 'rect',
@@ -148,6 +113,57 @@ export function mount(el, unit, { onSelect }) {
         labelPadding: [3, 10],
       },
     },
+  };
+}
+
+export function mount(el, unit, { onSelect }) {
+  const pos = layout(unit);
+  const colorOf = new Map(unit.groups.map((g) => [g.id, g.color]));
+  const groupOf = new Map(unit.concepts.map((c) => [c.id, c.group]));
+  const typesByPair = new Map();
+  for (const l of unit.links) {
+    const key = pairKey(l.source, l.target);
+    typesByPair.set(key, (typesByPair.get(key) ?? 0) + 1);
+  }
+  const edges = unit.links.map((l, i) => {
+    const prereq = l.type === 'prerequisite';
+    const doubled = typesByPair.get(pairKey(l.source, l.target)) > 1;
+    let curveOffset = sameRowCurve(pos.get(l.source), pos.get(l.target));
+    if (doubled) curveOffset += prereq ? 26 : -26;
+    const tint = deep(colorOf.get(groupOf.get(l.source)), 1.2);
+    return {
+      id: `e${i}`,
+      type: prereq ? 'flow-edge' : 'quadratic',
+      source: l.source,
+      target: l.target,
+      style: prereq
+        ? { stroke: '#8b7fd6', lineWidth: 3.5, lineDash: [10, 8], endArrowSize: 11, curveOffset, zIndex: 1, visibility: 'hidden' }
+        : { stroke: tint, lineWidth: 1.6, strokeOpacity: 0.75, endArrowSize: 8, curveOffset, labelText: l.label, zIndex: 2, visibility: 'hidden' },
+    };
+  });
+
+  const look = mapLook(unit, Object.fromEntries(pos), { hidden: true });
+  const graph = new G6.Graph({
+    container: el,
+    autoFit: 'view',
+    padding: 40,
+    animation: { duration: 350, easing: 'ease-out' },
+    data: { nodes: look.nodes, edges, combos: look.combos },
+    node: look.node,
+    edge: {
+      style: {
+        endArrow: true,
+        label: false,
+        opacity: 1, // 흐림(inactive)을 풀 때 되돌아갈 값
+        ...DARK_LABEL,
+        increasedLineWidthForHitTesting: 14, // 가는 선도 누르기 쉽게
+      },
+      state: {
+        active: { label: true, halo: true, haloStrokeOpacity: 0.18, haloLineWidth: 10, lineWidth: 3, strokeOpacity: 1, zIndex: 5 },
+        inactive: { opacity: 0.08 },
+      },
+    },
+    combo: look.combo,
     plugins: [BACKDROP],
     behaviors: ['drag-canvas', 'zoom-canvas'],
   });
@@ -203,7 +219,8 @@ export function mount(el, unit, { onSelect }) {
     if (!destroyed) applyStates();
   }
 
-  graph.on('node:click', (e) => onSelect(e.target.id));
+  // 이미 선택한 개념을 다시 누르면 선택을 풀어 단원 전체 화면으로 돌아간다.
+  graph.on('node:click', (e) => onSelect(e.target.id === selected ? null : e.target.id));
   graph.on('canvas:click', () => onSelect(null));
   for (const type of ['node', 'edge']) {
     graph.on(`${type}:pointerenter`, (e) => { hovered = e.target.id; applyStates(); });

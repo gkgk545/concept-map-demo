@@ -1,34 +1,60 @@
-// 만들기 모드: 카드 두 개를 차례로 눌러 연결하고 관계 문장을 쓴다.
+// 만들기 모드 2D 보기: 탐색 2D와 같은 개념도(위계 줄·영역 섬·영역 색 카드) 위에 내 연결만 그린다.
+// 카드 두 개를 차례로 눌러 연결하고 관계 문장을 쓴다. 3D 보기(make3d.js)와 연결 다루는 함수를 함께 쓴다.
 import { pairKey, teacherPairs, teacherSentence } from './model.js';
 import { openLinkDialog } from './dialog.js';
-import { BACKDROP, CARD_HOVER, CARD_STYLE } from './g6-elements.js';
+import { BACKDROP } from './g6-elements.js';
+import { layout, mapLook, sameRowCurve } from './explore2d.js';
 
-// 카드에는 영역 색을 쓰지 않는다(정답 구조가 드러나므로). 모두 같은 남색 띠를 두른다.
-const INK = '#5b5fc7';
+export const COLOR = { mine: '#5b5fc7', matched: '#2e9d5b', extra: '#9a9690', missed: '#e07b39' };
 const isMiss = (edge) => edge.id.startsWith('miss:');
-const COLOR = { mine: INK, matched: '#2e9d5b', extra: '#9a9690', missed: '#e07b39' };
 
-// 위계·영역 순서가 드러나지 않게 섞되, 단원마다 늘 같은 순서가 나오게 한다.
-function shuffled(items, seedText) {
-  let seed = [...seedText].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7);
-  const random = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
-  const out = [...items];
-  for (let i = out.length - 1; i > 0; i--) {
-    const j = Math.floor(random() * (i + 1));
-    [out[i], out[j]] = [out[j], out[i]];
+// 저장된 카드 자리가 탐색 2D 배치를 따른 것인지 표시한다. 그 전(1)에는 섞은 격자였다.
+const LAYOUT_VERSION = 2;
+
+// 카드 자리는 탐색 2D와 같은 배치에서 시작하고, 학생이 옮긴 자리는 저장해 둔다.
+function preparePositions(unit, work) {
+  if (work.layoutVersion !== LAYOUT_VERSION) {
+    work.positions = {};
+    work.layoutVersion = LAYOUT_VERSION;
   }
-  return out;
+  const base = layout(unit);
+  for (const c of unit.concepts) work.positions[c.id] ??= base.get(c.id);
 }
 
-// 격자 칸(240×150)이 캔버스 가로세로 비율에 맞게 열 수를 정한다.
-function gridPositions(unit, width, height) {
-  const ratio = (width / height) * (150 / 240);
-  const cols = Math.max(3, Math.round(Math.sqrt(unit.concepts.length * ratio)));
-  const pos = {};
-  shuffled(unit.concepts, unit.unit.id).forEach((c, i) => {
-    pos[c.id] = { x: (i % cols) * 240, y: Math.floor(i / cols) * 150 };
+// 그릴 연결 목록. 비교 전에는 내 연결만, 비교 뒤에는 맞은·내가 더한·놓친 연결로 나눈다.
+export function linkViews(unit, work) {
+  const result = work.lastCompare && !work.lastCompare.stale ? work.lastCompare : null;
+  const matched = new Set(result?.matched);
+  const views = work.links.map((l) => {
+    const key = pairKey(l.source, l.target);
+    const kind = !result ? 'mine' : matched.has(key) ? 'matched' : 'extra';
+    return { id: `my:${key}`, kind, source: l.source, target: l.target, text: l.text };
   });
-  return pos;
+  const pairs = teacherPairs(unit);
+  for (const key of result?.missed ?? []) {
+    const [source, target] = key.split('|');
+    views.push({ id: `miss:${key}`, kind: 'missed', source, target, text: `선생님: ${teacherSentence(pairs.get(key))}` });
+  }
+  return views;
+}
+
+// 두 개념 사이의 연결을 새로 만들거나 고치거나 지운다. 바뀌었으면 true.
+export async function editLink(unit, work, a, b) {
+  const labelOf = new Map(unit.concepts.map((c) => [c.id, c.label]));
+  const key = pairKey(a, b);
+  const existing = work.links.find((l) => pairKey(l.source, l.target) === key);
+  const answer = await openLinkDialog({
+    from: labelOf.get(existing?.source ?? a),
+    to: labelOf.get(existing?.target ?? b),
+    text: existing?.text ?? '',
+    canDelete: Boolean(existing),
+  });
+  if (!answer) return false;
+  if (answer.action === 'delete') work.links = work.links.filter((l) => l !== existing);
+  else if (existing) existing.text = answer.text;
+  else work.links.push({ source: a, target: b, text: answer.text });
+  if (work.lastCompare) work.lastCompare.stale = true;
+  return true;
 }
 
 // 배경 무늬는 캔버스 밖(DOM)에 있어 그림에 담기지 않으므로, 흰 바탕 위에 개념도를 얹어 저장한다.
@@ -48,52 +74,40 @@ async function toPNG(graph) {
 }
 
 export function mount(el, unit, { work, onSelect, onWorkChange }) {
-  const labelOf = new Map(unit.concepts.map((c) => [c.id, c.label]));
-  const pairs = teacherPairs(unit);
-  if (Object.keys(work.positions).length === 0) work.positions = gridPositions(unit, el.clientWidth, el.clientHeight);
+  preparePositions(unit, work);
+  const look = mapLook(unit, work.positions);
 
   function graphData() {
-    const result = work.lastCompare && !work.lastCompare.stale ? work.lastCompare : null;
-    const matched = new Set(result?.matched);
     // 내 연결엔 빛나는 점이 흐르고, 비교 뒤 맞은 연결은 금빛 점, 내가 더한 연결은 점 없이 회색으로 그린다.
     // 관계 문장이 카드에 가리지 않게 내 연결은 카드 위(zIndex)에 그린다.
-    const edges = work.links.map((l) => {
-      const key = pairKey(l.source, l.target);
-      const kind = !result ? 'mine' : matched.has(key) ? 'matched' : 'extra';
+    const edges = linkViews(unit, work).map((v) => {
+      const curveOffset = sameRowCurve(work.positions[v.source], work.positions[v.target]);
+      if (v.kind === 'missed') {
+        return {
+          id: v.id,
+          type: 'flow-edge',
+          source: v.source,
+          target: v.target,
+          style: { stroke: COLOR.missed, lineDash: [10, 8], comet: false, label: false, labelText: v.text, curveOffset },
+        };
+      }
       return {
-        id: `my:${key}`,
-        type: kind === 'extra' ? 'quadratic' : 'flow-edge',
-        source: l.source,
-        target: l.target,
+        id: v.id,
+        type: v.kind === 'extra' ? 'quadratic' : 'flow-edge',
+        source: v.source,
+        target: v.target,
         style: {
-          stroke: COLOR[kind],
-          labelText: l.text,
-          labelFill: d3.color(COLOR[kind]).darker(1.5).formatHex(),
-          cometFill: kind === 'matched' ? '#ffd166' : '#a5b4fc',
+          stroke: COLOR[v.kind],
+          labelText: v.text,
+          labelFill: d3.color(COLOR[v.kind]).darker(1.5).formatHex(),
+          cometFill: v.kind === 'matched' ? '#ffd166' : '#a5b4fc',
+          curveOffset,
           zIndex: 10,
         },
       };
     });
-    for (const key of result?.missed ?? []) {
-      const [source, target] = key.split('|');
-      edges.push({
-        id: `miss:${key}`,
-        type: 'flow-edge',
-        source,
-        target,
-        style: {
-          stroke: COLOR.missed,
-          lineDash: [10, 8],
-          comet: false,
-          label: false,
-          labelText: `선생님: ${teacherSentence(pairs.get(key))}`,
-        },
-      });
-    }
-    return {
-      nodes: unit.concepts.map((c) => ({ id: c.id, style: { ...work.positions[c.id], labelText: c.label } })),
-      edges,
-    };
+    const nodes = look.nodes.map((n) => ({ ...n, style: { ...n.style, ...work.positions[n.id] } }));
+    return { nodes, edges, combos: look.combos };
   }
 
   const graph = new G6.Graph({
@@ -102,14 +116,8 @@ export function mount(el, unit, { work, onSelect, onWorkChange }) {
     padding: 40,
     animation: { duration: 350, easing: 'ease-out' },
     data: graphData(),
-    node: {
-      type: 'concept-card',
-      style: { ...CARD_STYLE, size: [158, 50], accent: INK, stroke: '#d8d3ea', haloStroke: INK },
-      state: {
-        selected: { halo: true, lineWidth: 3, stroke: '#3b2f8f', fill: '#f3f2ff', shadowBlur: 26, shadowColor: 'rgba(59, 47, 143, 0.45)' },
-        active: CARD_HOVER,
-      },
-    },
+    node: look.node,
+    combo: look.combo,
     edge: {
       style: {
         lineWidth: 2.2,
@@ -136,17 +144,17 @@ export function mount(el, unit, { work, onSelect, onWorkChange }) {
       state: { active: { label: true, halo: true, haloStrokeOpacity: 0.2, haloLineWidth: 10, zIndex: 12 } },
     },
     plugins: [BACKDROP],
-    behaviors: ['drag-canvas', 'zoom-canvas', 'drag-element'],
+    // 카드를 다른 영역 섬에 떨어뜨려도 영역은 바뀌지 않는다(dropEffect: none).
+    behaviors: ['drag-canvas', 'zoom-canvas', { type: 'drag-element', dropEffect: 'none' }],
   });
 
   let pending = null;
+  let hovered = null;
 
   async function redraw() {
     graph.setData(graphData());
     await graph.draw();
   }
-
-  let hovered = null;
 
   // 고른 카드(pending)는 광환, 마우스가 올라간 카드는 떠오름
   function cardStates(id) {
@@ -161,52 +169,44 @@ export function mount(el, unit, { work, onSelect, onWorkChange }) {
     graph.setElementState(states, true);
   }
 
-  function changed() {
-    if (work.lastCompare) work.lastCompare.stale = true;
+  async function edit(a, b) {
+    if (!(await editLink(unit, work, a, b))) return;
     onWorkChange();
     redraw();
   }
 
-  async function editLink(a, b) {
-    const key = pairKey(a, b);
-    const existing = work.links.find((l) => pairKey(l.source, l.target) === key);
-    const answer = await openLinkDialog({
-      from: labelOf.get(existing?.source ?? a),
-      to: labelOf.get(existing?.target ?? b),
-      text: existing?.text ?? '',
-      canDelete: Boolean(existing),
-    });
-    if (!answer) return;
-    if (answer.action === 'delete') work.links = work.links.filter((l) => l !== existing);
-    else if (existing) existing.text = answer.text;
-    else work.links.push({ source: a, target: b, text: answer.text });
-    changed();
-  }
-
+  // 고른 카드를 다시 누르면 고르기를 풀고 단원 전체 화면으로 돌아간다.
   graph.on('node:click', async (e) => {
     const id = e.target.id;
+    if (pending === id) {
+      setPending(null);
+      return onSelect(null);
+    }
     onSelect(id);
-    if (!pending || pending === id) return setPending(pending === id ? null : id);
+    if (!pending) return setPending(id);
     const first = pending;
     setPending(null);
-    await editLink(first, id);
+    await edit(first, id);
   });
   graph.on('edge:click', (e) => {
     const id = e.target.id;
-    if (id.startsWith('my:')) editLink(...id.slice(3).split('|'));
+    if (id.startsWith('my:')) edit(...id.slice(3).split('|'));
   });
   graph.on('node:pointerenter', (e) => { hovered = e.target.id; graph.setElementState(hovered, cardStates(hovered), true); });
   graph.on('node:pointerleave', (e) => { hovered = null; graph.setElementState(e.target.id, cardStates(e.target.id), true); });
-  graph.on('edge:pointerenter', (e) => e.target.id.startsWith('miss:') && graph.setElementState(e.target.id, 'active'));
-  graph.on('edge:pointerleave', (e) => e.target.id.startsWith('miss:') && graph.setElementState(e.target.id, []));
+  graph.on('edge:pointerenter', (e) => isMiss(e.target) && graph.setElementState(e.target.id, 'active'));
+  graph.on('edge:pointerleave', (e) => isMiss(e.target) && graph.setElementState(e.target.id, []));
   graph.on('canvas:click', () => {
     setPending(null);
     onSelect(null);
   });
-  graph.on('node:dragend', () => {
+  // 카드 하나든 영역 섬 통째로든, 옮긴 뒤의 자리를 저장한다.
+  const savePositions = () => {
     for (const n of graph.getNodeData()) work.positions[n.id] = { x: n.style.x, y: n.style.y };
     onWorkChange();
-  });
+  };
+  graph.on('node:dragend', savePositions);
+  graph.on('combo:dragend', savePositions);
 
   graph.render();
   return {
